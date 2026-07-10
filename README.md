@@ -1,4 +1,5 @@
 Agent Context MCP Server
+
 A portable, tool-agnostic memory and code structure graph for agentic AI coding tools (OpenCode, Antigravity, Claude Code, etc.).
 
 🧠 The Problem
