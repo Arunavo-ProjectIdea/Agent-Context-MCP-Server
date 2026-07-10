@@ -79,7 +79,8 @@ class StructureGraph:
         symbols = []
         raw_calls = []
         
-        def traverse(node, parent_type=None, current_caller=None):
+        def traverse(node, parent_type=None, current_class=None, current_caller=None):
+            my_class = current_class
             my_caller = current_caller
             if node.type == 'class_definition':
                 name_node = node.child_by_field_name('name')
@@ -92,8 +93,10 @@ class StructureGraph:
                         'name': sym_name,
                         'line_start': node.start_point[0] + 1,
                         'line_end': node.end_point[0] + 1,
-                        'content_hash': content_hash
+                        'content_hash': content_hash,
+                        '_internal_key': sym_name
                     })
+                    my_class = sym_name
                     my_caller = sym_name
                 parent_type = 'class'
             elif node.type == 'function_definition':
@@ -101,6 +104,9 @@ class StructureGraph:
                 if name_node:
                     sym_name = name_node.text.decode('utf8')
                     sym_type = 'method' if parent_type == 'class' else 'function'
+                    
+                    internal_key = (my_class, sym_name) if sym_type == 'method' else sym_name
+                    
                     symbols.append({
                         'id': str(uuid.uuid4()),
                         'file_path': file_path,
@@ -108,42 +114,66 @@ class StructureGraph:
                         'name': sym_name,
                         'line_start': node.start_point[0] + 1,
                         'line_end': node.end_point[0] + 1,
-                        'content_hash': content_hash
+                        'content_hash': content_hash,
+                        '_internal_key': internal_key
                     })
-                    my_caller = sym_name
+                    my_caller = internal_key
             elif node.type == 'call':
                 func_node = node.child_by_field_name('function')
                 if func_node and current_caller:
                     if func_node.type == 'identifier':
                         callee_name = func_node.text.decode('utf8')
-                        raw_calls.append((current_caller, callee_name))
+                        raw_calls.append((current_caller, callee_name, False, current_class))
                     elif func_node.type == 'attribute':
                         attr_node = func_node.child_by_field_name('attribute')
                         if attr_node:
                             callee_name = attr_node.text.decode('utf8')
-                            raw_calls.append((current_caller, callee_name))
+                            raw_calls.append((current_caller, callee_name, True, current_class))
             
             for child in node.children:
-                traverse(child, parent_type, my_caller)
+                traverse(child, parent_type, my_class, my_caller)
                 
         traverse(root_node)
         
-        symbol_map = {sym['name']: sym['id'] for sym in symbols}
+        symbol_map = {sym['_internal_key']: sym['id'] for sym in symbols}
+        global_name_map = {}
+        for sym in symbols:
+            if sym['symbol_type'] == 'function':
+                global_name_map[sym['name']] = sym['id']
+        for sym in symbols:
+            if sym['name'] not in global_name_map:
+                global_name_map[sym['name']] = sym['id']
+
         resolved_calls = []
-        for caller_name, callee_name in raw_calls:
-            if caller_name in symbol_map and callee_name in symbol_map:
+        for caller_key, callee_name, is_attr, caller_class in raw_calls:
+            caller_id = symbol_map.get(caller_key)
+            callee_id = None
+            
+            if is_attr and caller_class:
+                callee_key = (caller_class, callee_name)
+                if callee_key in symbol_map:
+                    callee_id = symbol_map[callee_key]
+            
+            if not callee_id:
+                callee_id = global_name_map.get(callee_name)
+                    
+            if caller_id and callee_id:
                 resolved_calls.append({
-                    'caller_id': symbol_map[caller_name],
-                    'callee_id': symbol_map[callee_name]
+                    'caller_id': caller_id,
+                    'callee_id': callee_id
                 })
                 
+        for sym in symbols:
+            del sym['_internal_key']
+            
         return symbols, resolved_calls
 
     def _extract_js_symbols_and_calls(self, root_node, file_path: str, content_hash: str):
         symbols = []
         raw_calls = []
         
-        def traverse(node, parent_type=None, current_caller=None):
+        def traverse(node, parent_type=None, current_class=None, current_caller=None):
+            my_class = current_class
             my_caller = current_caller
             if node.type == 'class_declaration':
                 name_node = node.child_by_field_name('name')
@@ -156,8 +186,10 @@ class StructureGraph:
                         'name': sym_name,
                         'line_start': node.start_point[0] + 1,
                         'line_end': node.end_point[0] + 1,
-                        'content_hash': content_hash
+                        'content_hash': content_hash,
+                        '_internal_key': sym_name
                     })
+                    my_class = sym_name
                     my_caller = sym_name
                 parent_type = 'class'
             elif node.type == 'function_declaration' or node.type == 'method_definition':
@@ -165,6 +197,9 @@ class StructureGraph:
                 if name_node:
                     sym_name = name_node.text.decode('utf8')
                     sym_type = 'method' if node.type == 'method_definition' else 'function'
+                    
+                    internal_key = (my_class, sym_name) if sym_type == 'method' else sym_name
+                    
                     symbols.append({
                         'id': str(uuid.uuid4()),
                         'file_path': file_path,
@@ -172,35 +207,58 @@ class StructureGraph:
                         'name': sym_name,
                         'line_start': node.start_point[0] + 1,
                         'line_end': node.end_point[0] + 1,
-                        'content_hash': content_hash
+                        'content_hash': content_hash,
+                        '_internal_key': internal_key
                     })
-                    my_caller = sym_name
+                    my_caller = internal_key
             elif node.type == 'call_expression':
                 func_node = node.child_by_field_name('function')
                 if func_node and current_caller:
                     if func_node.type == 'identifier':
                         callee_name = func_node.text.decode('utf8')
-                        raw_calls.append((current_caller, callee_name))
+                        raw_calls.append((current_caller, callee_name, False, current_class))
                     elif func_node.type == 'member_expression':
                         prop_node = func_node.child_by_field_name('property')
                         if prop_node:
                             callee_name = prop_node.text.decode('utf8')
-                            raw_calls.append((current_caller, callee_name))
+                            raw_calls.append((current_caller, callee_name, True, current_class))
             
             for child in node.children:
-                traverse(child, parent_type, my_caller)
+                traverse(child, parent_type, my_class, my_caller)
                 
         traverse(root_node)
         
-        symbol_map = {sym['name']: sym['id'] for sym in symbols}
+        symbol_map = {sym['_internal_key']: sym['id'] for sym in symbols}
+        global_name_map = {}
+        for sym in symbols:
+            if sym['symbol_type'] == 'function':
+                global_name_map[sym['name']] = sym['id']
+        for sym in symbols:
+            if sym['name'] not in global_name_map:
+                global_name_map[sym['name']] = sym['id']
+
         resolved_calls = []
-        for caller_name, callee_name in raw_calls:
-            if caller_name in symbol_map and callee_name in symbol_map:
+        for caller_key, callee_name, is_attr, caller_class in raw_calls:
+            caller_id = symbol_map.get(caller_key)
+            callee_id = None
+            
+            if is_attr and caller_class:
+                callee_key = (caller_class, callee_name)
+                if callee_key in symbol_map:
+                    callee_id = symbol_map[callee_key]
+            
+            if not callee_id:
+                callee_id = global_name_map.get(callee_name)
+                    
+            if caller_id and callee_id:
                 resolved_calls.append({
-                    'caller_id': symbol_map[caller_name],
-                    'callee_id': symbol_map[callee_name]
+                    'caller_id': caller_id,
+                    'callee_id': callee_id
                 })
                 
+        for sym in symbols:
+            del sym['_internal_key']
+            
         return symbols, resolved_calls
 
     def get_symbol(self, name: str) -> List[Dict[str, Any]]:
@@ -247,7 +305,7 @@ class StructureGraph:
             return results
 
     def get_architecture(self) -> Dict[str, Any]:
-        """Returns a basic high-level overview of the parsed codebase, including files, symbol counts, and entry points."""
+        """Returns a basic high-level overview of the parsed codebase, including files, symbol counts, and uncalled symbols."""
         with self.storage.get_connection() as conn:
             c = conn.execute("SELECT DISTINCT file_path FROM symbols")
             files = [row['file_path'] for row in c.fetchall()]
@@ -261,10 +319,11 @@ class StructureGraph:
                 WHERE id NOT IN (SELECT DISTINCT callee_id FROM calls)
             '''
             c = conn.execute(query)
-            entry_points = [dict(row) for row in c.fetchall()]
+            uncalled_within_file = [dict(row) for row in c.fetchall()]
             
             return {
                 "files": files,
                 "symbol_counts": counts,
-                "entry_points": entry_points
+                "uncalled_within_file": uncalled_within_file,
+                "note": "Methods called only via an external instance (e.g. obj.method()) will appear here since cross-file/instance calls aren't tracked yet."
             }

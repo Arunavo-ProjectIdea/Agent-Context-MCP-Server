@@ -75,7 +75,7 @@ def graph_trace_calls(symbol_name: str, direction: str) -> List[Dict[str, Any]]:
 
 @mcp.tool(name="graph.get_architecture")
 def graph_get_architecture() -> Dict[str, Any]:
-    """Returns a basic high-level overview of the parsed codebase, including files, symbol counts, and entry points."""
+    """Returns a basic high-level overview of the parsed codebase, including files, symbol counts, and uncalled symbols."""
     return graph.get_architecture()
 
 @mcp.tool(name="project.export")

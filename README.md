@@ -28,7 +28,7 @@ You can start a task in one AI tool, hit a context limit, open a completely diff
 
 1. Clone this repository to your machine:
    ```bash
-   git clone [https://github.com/YOUR-USERNAME/agent-context-mcp-server.git](https://github.com/YOUR-USERNAME/agent-context-mcp-server.git)
+   git clone (replace with your own repo URL once you push this to GitHub)
    cd agent-context-mcp-server
    ```
 2. The project uses `uv` for dependency management. The required packages (`mcp`, `tree-sitter`, `tree-sitter-python`, `tree-sitter-javascript`, `tree-sitter-typescript`) will be automatically managed when you run the server.
